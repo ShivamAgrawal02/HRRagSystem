@@ -10,11 +10,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+// Registering services
 builder.Services.AddScoped<IDocumentScanner, DocumentScanner>();
+builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+//Adding DbContext 
+var SQLiteConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<HRRagSystemSQLiteDbContext>(options =>
-    options.UseSqlite(
-        builder.Configuration.GetConnectionString(
-            "DefaultConnection")));
+    options.UseSqlite(SQLiteConnectionString));
 
 var app = builder.Build();
 
