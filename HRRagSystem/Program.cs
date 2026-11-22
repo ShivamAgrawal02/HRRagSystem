@@ -13,6 +13,8 @@ builder.Services.AddOpenApi();
 // Registering services
 builder.Services.AddScoped<IDocumentScanner, DocumentScanner>();
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+builder.Services.AddScoped<IChangeDetector, ChangeDetector>();
+builder.Services.AddScoped<IIngestionService, IngestionService>();
 //Adding DbContext 
 var SQLiteConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<HRRagSystemSQLiteDbContext>(options =>

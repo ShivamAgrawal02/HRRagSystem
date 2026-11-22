@@ -2,5 +2,6 @@
 {
     public interface IIngestionService
     {
+        Task PerformIngestAsync();
     }
 }

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using HRRagSystem.Services.Interfaces;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HRRagSystem.Controllers
@@ -7,6 +8,16 @@ namespace HRRagSystem.Controllers
     [ApiController]
     public class IngestionController : ControllerBase
     {
-        
+        private readonly IIngestionService _ingestionService;
+        public IngestionController(IIngestionService ingestionService)
+        {
+            _ingestionService = ingestionService;
+        }
+        [HttpPost]
+        public async Task<IActionResult> IngestDocument()
+        {
+            await _ingestionService.PerformIngestAsync();
+            return Ok();
+        }
     }
 }
