@@ -15,6 +15,8 @@ builder.Services.AddScoped<IDocumentScanner, DocumentScanner>();
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 builder.Services.AddScoped<IChangeDetector, ChangeDetector>();
 builder.Services.AddScoped<IIngestionService, IngestionService>();
+builder.Services.AddScoped<IPdfReader, PdfReader>();
+builder.Services.AddScoped<ITextCleaner, TextCleaner>();
 //Adding DbContext 
 var SQLiteConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<HRRagSystemSQLiteDbContext>(options =>

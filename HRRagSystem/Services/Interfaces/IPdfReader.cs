@@ -2,5 +2,6 @@
 {
     public interface IPdfReader
     {
+        Task<string> ExtractTextAsync(string filePath, CancellationToken cancellationToken = default);
     }
 }

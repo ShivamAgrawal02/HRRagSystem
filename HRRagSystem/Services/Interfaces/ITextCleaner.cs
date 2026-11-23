@@ -2,5 +2,6 @@
 {
     public interface ITextCleaner
     {
+        Task<string> CleanTextAsync(string text, CancellationToken cancellationToken = default);
     }
 }
