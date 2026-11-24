@@ -17,6 +17,8 @@ builder.Services.AddScoped<IChangeDetector, ChangeDetector>();
 builder.Services.AddScoped<IIngestionService, IngestionService>();
 builder.Services.AddScoped<IPdfReader, PdfReader>();
 builder.Services.AddScoped<ITextCleaner, TextCleaner>();
+builder.Services.AddSingleton<IEmbeddingGenerator, EmbeddingGenerator>();
+
 //Adding DbContext 
 var SQLiteConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<HRRagSystemSQLiteDbContext>(options =>
