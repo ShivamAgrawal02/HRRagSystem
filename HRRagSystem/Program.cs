@@ -1,4 +1,5 @@
 using HRRagSystem.Database;
+using HRRagSystem.Models;
 using HRRagSystem.Services.Implementation;
 using HRRagSystem.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,8 @@ builder.Services.AddScoped<IIngestionService, IngestionService>();
 builder.Services.AddScoped<IPdfReader, PdfReader>();
 builder.Services.AddScoped<ITextCleaner, TextCleaner>();
 builder.Services.AddSingleton<IEmbeddingGenerator, EmbeddingGenerator>();
+builder.Services.AddScoped<IChunker, ChunkerUsingTextChunker>();
+
 
 //Adding DbContext 
 var SQLiteConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -25,6 +28,7 @@ builder.Services.AddDbContext<HRRagSystemSQLiteDbContext>(options =>
     options.UseSqlite(SQLiteConnectionString));
 
 var app = builder.Build();
+
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -41,5 +45,6 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+
 
 app.Run();

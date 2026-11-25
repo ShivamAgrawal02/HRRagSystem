@@ -30,5 +30,5 @@ namespace HRRagSystem.Services.Implementation
             return Task.FromResult(text.Trim());
           
         }
-    }q
+    }
 }
