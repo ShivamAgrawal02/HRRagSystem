@@ -3,6 +3,7 @@ using HRRagSystem.Models;
 using HRRagSystem.Services.Implementation;
 using HRRagSystem.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Qdrant.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,12 +21,17 @@ builder.Services.AddScoped<IPdfReader, PdfReader>();
 builder.Services.AddScoped<ITextCleaner, TextCleaner>();
 builder.Services.AddSingleton<IEmbeddingGenerator, EmbeddingGenerator>();
 builder.Services.AddScoped<IChunker, ChunkerUsingTextChunker>();
+builder.Services.AddScoped<IVectorRepository, VectorRepository>();
 
 
 //Adding DbContext 
 var SQLiteConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<HRRagSystemSQLiteDbContext>(options =>
     options.UseSqlite(SQLiteConnectionString));
+var qdrantHost = builder.Configuration["Qdrant:Host"];
+var qdrantPort = int.Parse(builder.Configuration["Qdrant:GrpcPort"]);
+
+builder.Services.AddSingleton(new QdrantClient(qdrantHost,qdrantPort));
 
 var app = builder.Build();
 
