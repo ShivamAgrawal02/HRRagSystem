@@ -26,9 +26,9 @@ namespace HRRagSystem.Services.Implementation
             return text.Length / 4;
         }
         
-        public async Task<List<DocumentChunk>> ChunkDocumentAsync(string cleanedText, DocumentInfo document)
+        public async Task<List<DocumentChunk>> ChunkDocumentAsync(string cleanedText, DocumentInfo document, CancellationToken cancellation = default)
         {
-            if(!string.IsNullOrWhiteSpace(cleanedText))
+            if(string.IsNullOrWhiteSpace(cleanedText))
             {
                 _logger.LogWarning("Received empty text for chunking.");
                 return new List<DocumentChunk>();

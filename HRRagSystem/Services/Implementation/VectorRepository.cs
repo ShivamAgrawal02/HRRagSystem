@@ -13,11 +13,12 @@ namespace HRRagSystem.Services.Implementation
         private readonly ulong _vectorSize;
         private readonly ILogger<VectorRepository> _logger;
 
-        public VectorRepository(ILogger<VectorRepository> logger, IConfiguration configuration)
+        public VectorRepository(ILogger<VectorRepository> logger, IConfiguration configuration ,QdrantClient qdrantClient)
         {
             _logger = logger;
             _collectionName = configuration["Qdrant:CollectionName"] ?? throw new ArgumentNullException("Qdrant:CollectionName");
             _vectorSize = ulong.Parse(configuration["Qdrant:VectorSize"] ?? throw new ArgumentNullException("Qdrant:VectorSize"));
+            _qdrantClient = qdrantClient;
 
         }
        

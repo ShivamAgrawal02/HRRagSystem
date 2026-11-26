@@ -27,6 +27,7 @@ namespace HRRagSystem.Services.Implementation
                         isDocumentExistsInDatabase = true;
                         if(scannedDocument.FileHash != databaseDocument.FileHash)
                         {
+                            scannedDocument.DocumentId = databaseDocument.DocumentId;
                             updatedDocuments.Add(scannedDocument);
                         }
                     }

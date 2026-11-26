@@ -24,8 +24,8 @@ namespace HRRagSystem.Services.Implementation
                 return;
             }
 
-            _context.Documents.Remove(document);
-            await _context.SaveChangesAsync();
+            _context.Documents.Remove(existingDocument);
+            await _context.SaveChangesAsync(cancellationToken);
         }
 
         public async Task<List<DocumentInfo>> GetAllDocumentsAsync(CancellationToken cancellationToken = default)
@@ -45,7 +45,7 @@ namespace HRRagSystem.Services.Implementation
             {
                await _context.Documents.AddAsync(document);
             }
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
         }
     }
 }

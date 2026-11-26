@@ -14,9 +14,9 @@ namespace HRRagSystem.Controllers
             _ingestionService = ingestionService;
         }
         [HttpPost]
-        public async Task<IActionResult> IngestDocument()
+        public async Task<IActionResult> IngestDocument(CancellationToken cancellationToken)
         {
-            await _ingestionService.PerformIngestAsync();
+            await _ingestionService.PerformIngestAsync(cancellationToken);
             return Ok();
         }
     }

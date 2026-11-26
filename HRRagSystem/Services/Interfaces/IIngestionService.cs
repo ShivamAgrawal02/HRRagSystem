@@ -2,6 +2,6 @@
 {
     public interface IIngestionService
     {
-        Task PerformIngestAsync();
+        Task PerformIngestAsync(CancellationToken cancellationToken);
     }
 }
