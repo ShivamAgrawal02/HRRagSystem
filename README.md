@@ -13,71 +13,123 @@
   <img alt="Google Gemini" src="https://img.shields.io/badge/Embeddings-Google_Gemini-4285F4?logo=google&logoColor=white">
 </p>
 
-HR RAG System is an ASP.NET Core Web API that scans a configured folder for HR PDF files, detects additions, changes, and removals, and indexes document chunks as vector embeddings in Qdrant. SQLite stores document metadata and file hashes so unchanged files can be skipped on later ingestion runs.
+Finding the right detail in a collection of HR policies starts with getting those documents into a form an application can work with. HR RAG System handles that first step: it scans a folder of PDFs, notices what has changed since the last run, extracts and prepares the text, and stores each chunk with a Google Gemini embedding in Qdrant. SQLite keeps the document record and its processing status.
+
+The project is intentionally focused on ingestion today. It gives you a foundation for semantic retrieval, while the public retrieval and chat API still needs to be built.
 
 > **Current scope:** The working API endpoint triggers document ingestion. A Qdrant similarity-search method exists in `VectorRepository`, but the retrieval controller and retrieval service are currently empty and are not registered in dependency injection. This repository does not yet expose a question-answering/chat API.
 
 ## At a glance
 
-- Recursively scans a configured directory for PDF documents.
-- Uses SHA-256 file hashes to detect changed content.
-- Extracts text from PDFs with PdfPig and normalizes whitespace.
-- Splits text into overlapping chunks and generates an embedding for each chunk through Google Gemini.
-- Stores document metadata in SQLite and chunk vectors/payloads in Qdrant.
-- Provides an ingestion endpoint at `POST /api/ingestion`.
+- Recursively scans a configured directory and uses SHA-256 hashes to spot new, changed, and removed PDFs.
+- Extracts PDF text, tidies it, then splits it into overlapping chunks.
+- Generates a Gemini embedding for each chunk and stores the vectors and chunk text in Qdrant.
+- Saves document metadata and processing progress in SQLite, including a `Failed` status when processing throws an error.
+- Starts ingestion through `POST /api/ingestion`.
 
-## Architecture
+## Architecture at a glance
+
+The API is the entry point, but the ingestion service does the coordinating. SQLite answers “what did we process before?” while Qdrant holds the chunk vectors that can later support semantic search.
 
 ```mermaid
-flowchart LR
-	subgraph Input[Document source]
-		PDFs[HR PDF files]
+flowchart TB
+	User[You or an API client] -->|POST /api/ingestion| API[ASP.NET Core API]
+	API --> Ingest[IngestionService]
+
+	subgraph Source[Document source]
+		PDFs[HR policy PDFs]
 	end
 
-	subgraph API[ASP.NET Core API]
-		Endpoint[POST /api/ingestion]
-		Ingest[IngestionService]
+	subgraph Prep[Prepare each new or changed document]
+		Reader[PdfReader<br/>extract text]
+		Cleaner[TextCleaner<br/>normalize text]
+		Chunker[ChunkerUsingTextChunker<br/>split into chunks]
+		Embedder[EmbeddingGenerator]
+		Gemini[Google Gemini<br/>embedding model]
+		Reader --> Cleaner --> Chunker --> Embedder --> Gemini
+		Gemini -->|vector| Embedder
 	end
 
-	subgraph Pipeline[Ingestion pipeline]
-		Scan[DocumentScanner<br/>discover files + SHA-256]
-		Detect[ChangeDetector<br/>new / updated / deleted]
-		Read[PdfReader<br/>extract page text]
-		Clean[TextCleaner<br/>normalize whitespace]
-		Chunk[ChunkerUsingTextChunker<br/>split into chunks]
-		Embed[EmbeddingGenerator<br/>Google Gemini]
+	subgraph Stores[Storage]
+		Docs[DocumentRepository]
+		SQLite[(SQLite<br/>document metadata + status)]
+		Vectors[VectorRepository]
+		Qdrant[(Qdrant<br/>embeddings + chunk payloads)]
 	end
 
-	subgraph Storage[Persistence]
-		Repo[DocumentRepository]
-		SQLite[(SQLite<br/>document metadata)]
-		VectorRepo[VectorRepository]
-		Qdrant[(Qdrant<br/>vectors + chunk payloads)]
-	end
+	Ingest --> Scanner[DocumentScanner<br/>find PDFs + hash files]
+	PDFs --> Scanner
+	Scanner -->|scanned files| Ingest
+	Ingest --> Docs
+	Docs <--> SQLite
+	Docs -->|existing records| Ingest
+	Ingest --> Detector[ChangeDetector<br/>compare paths + hashes]
+	Detector -->|new, changed, removed| Ingest
+	Ingest --> Reader
+	Ingest -->|save status checkpoints| Docs
+	Chunker --> Vectors
+	Vectors --> Qdrant
+	Ingest -->|delete vectors for changed/removed docs| Vectors
 
-	PDFs --> Scan
-	Endpoint --> Ingest
-	Ingest --> Scan
-	Scan --> Detect
-	Repo <--> SQLite
-	Detect <--> Repo
-	Detect --> Ingest
-	Ingest --> Read --> Clean --> Chunk
-	Chunk --> Embed
-	Embed --> Chunk
-	Chunk --> VectorRepo --> Qdrant
-	Ingest --> Repo
-	Ingest -. remove deleted/old vectors .-> VectorRepo
+	classDef actor fill:#fff3bf,stroke:#e67700,color:#402100,stroke-width:2px;
+	classDef api fill:#e5dbff,stroke:#7048e8,color:#2b1a59,stroke-width:2px;
+	classDef service fill:#d3f9d8,stroke:#2b8a3e,color:#13351a,stroke-width:2px;
+	classDef ai fill:#d0ebff,stroke:#1971c2,color:#102a43,stroke-width:2px;
+	classDef storage fill:#ffe8cc,stroke:#d9480f,color:#421000,stroke-width:2px;
+	class User,PDFs actor;
+	class API api;
+	class Ingest,Scanner,Detector,Reader,Cleaner,Chunker,Embedder,Docs,Vectors service;
+	class Gemini ai;
+	class SQLite,Qdrant storage;
 ```
 
-### Ingestion lifecycle
+## What happens during ingestion?
 
-1. A client calls `POST /api/ingestion`.
-2. `DocumentScanner` recursively enumerates PDFs in `DataFolderPath`, creates metadata, and calculates SHA-256 hashes.
-3. `DocumentRepository` loads existing records; `ChangeDetector` compares relative paths and hashes to classify new, updated, and deleted documents.
-4. Deleted files have their Qdrant vectors and SQLite metadata removed.
-5. New and updated PDFs are read, cleaned, chunked, and embedded. Updated documents have their old vectors deleted before replacement chunks are upserted.
-6. Document metadata is upserted into SQLite, while embeddings and chunk payloads are upserted into Qdrant.
+This second view follows one ingestion request from start to finish, including the status updates saved along the way.
+
+```mermaid
+flowchart TD
+	Start([POST /api/ingestion]) --> Scan[Scan PDF folder<br/>calculate SHA-256 hashes]
+	Scan --> Compare[Compare paths and hashes<br/>with SQLite records]
+	Compare --> Changes{What changed?}
+
+	Changes -->|No change| Skip[Leave existing record and vectors as-is]
+	Changes -->|Removed| Delete[Delete document vectors<br/>and SQLite record]
+	Changes -->|New or changed| Begin[Save status: NotProcessed]
+
+	Begin --> Extract[Extract PDF text]
+	Extract --> S1[Save status: Extracted]
+	S1 --> Clean[Normalize text]
+	Clean --> S2[Save status: Cleaned]
+	S2 --> Chunk[Create overlapping chunks<br/>and generate embeddings]
+	Chunk --> S3[Save status: Chunked]
+	S3 --> IsUpdate{Was this document<br/>already indexed?}
+	IsUpdate -->|Yes| RemoveOld[Remove its old Qdrant vectors]
+	IsUpdate -->|No| Upsert
+	RemoveOld --> Upsert[Upsert chunk vectors and payloads]
+	Upsert --> Done[Save status: Stored<br/>set LastIngestedAtUtc]
+
+	Extract -. processing error .-> Failed[Save status: Failed<br/>then rethrow the error]
+	Clean -. processing error .-> Failed
+	Chunk -. processing error .-> Failed
+	RemoveOld -. processing error .-> Failed
+	Upsert -. processing error .-> Failed
+
+	classDef start fill:#fff3bf,stroke:#e67700,color:#402100,stroke-width:2px;
+	classDef work fill:#d0ebff,stroke:#1971c2,color:#102a43,stroke-width:2px;
+	classDef status fill:#d3f9d8,stroke:#2b8a3e,color:#13351a,stroke-width:2px;
+	classDef choice fill:#f3d9fa,stroke:#9c36b5,color:#35113f,stroke-width:2px;
+	classDef cleanup fill:#ffe8cc,stroke:#d9480f,color:#421000,stroke-width:2px;
+	classDef failure fill:#ffe3e3,stroke:#c92a2a,color:#4a1010,stroke-width:2px;
+	class Start start;
+	class Scan,Compare,Extract,Clean,Chunk,Upsert work;
+	class S1,S2,S3,Done status;
+	class Changes,IsUpdate choice;
+	class Skip,Delete,RemoveOld cleanup;
+	class Failed failure;
+```
+
+The statuses in the diagram are values from `DocumentStatus`: `NotProcessed`, `Extracted`, `Cleaned`, `Chunked`, `Stored`, and `Failed`. The dashed red connections illustrate the shared failure path: an error anywhere in per-document processing is recorded as `Failed` and rethrown. Documents that are unchanged are not reprocessed; for changed documents, old Qdrant vectors are removed before the replacement chunks are written.
 
 ## Tech stack
 
@@ -98,15 +150,15 @@ Package versions are maintained in [`HRRagSystem/HRRagSystem.csproj`](HRRagSyste
 
 | Service | Responsibility |
 |---|---|
-| `IngestionService` (`IIngestionService`) | Coordinates the ingestion lifecycle: scans files, compares stored metadata, handles deletions, and processes new or changed PDFs through the pipeline. |
-| `DocumentScanner` (`IDocumentScanner`) | Recursively finds PDF files under the configured data directory and returns file metadata, relative paths, and SHA-256 hashes. |
+| `IngestionService` (`IIngestionService`) | Orchestrates scanning and change detection, then processes new or changed PDFs. It saves each document's status as it moves through extraction, cleaning, chunking, and storage; processing errors are recorded as `Failed` and rethrown. |
+| `DocumentScanner` (`IDocumentScanner`) | Recursively finds PDF files under the configured data directory and returns file metadata, relative paths, SHA-256 hashes, and an initial `NotProcessed` status. |
 | `ChangeDetector` (`IChangeDetector`) | Compares scanned documents against database records by relative path and hash; returns new, updated, and deleted document sets. |
 | `PdfReader` (`IPdfReader`) | Extracts text from each page of a PDF using PdfPig. |
 | `TextCleaner` (`ITextCleaner`) | Normalizes line endings, repeated spaces/tabs, and excessive blank lines in extracted text. |
 | `ChunkerUsingTextChunker` (`IChunker`) | Uses Semantic Kernel's `TextChunker` to split text into chunks, estimates token counts, attaches document metadata, and requests an embedding per chunk. Current limits are configured in the class (100 tokens per line, 200 tokens per paragraph, 20-token overlap). |
 | `EmbeddingGenerator` (`IEmbeddingGenerator`) | Calls the configured Gemini embedding model and returns the generated `float[]` vector. |
-| `DocumentRepository` (`IDocumentRepository`) | Reads, upserts, and deletes document metadata through the EF Core SQLite context. |
-| `VectorRepository` (`IVectorRepository`) | Ensures the Qdrant collection exists, upserts chunk vectors and payloads, deletes vectors by document ID, and has a similarity-query method. |
+| `DocumentRepository` (`IDocumentRepository`) | Reads, upserts, and deletes document records through the EF Core SQLite context. The ingestion service uses it to persist status checkpoints and the last-ingested timestamp. |
+| `VectorRepository` (`IVectorRepository`) | Ensures the Qdrant collection exists, upserts chunk vectors and payloads, removes vectors by document ID, and provides a similarity-query method. That query is not currently exposed by an API endpoint. |
 | `HRRagSystemSQLiteDbContext` | Defines the SQLite `Documents` set and document key/required-field/unique-relative-path rules. |
 
 ### Dependency injection lifetimes
@@ -122,6 +174,8 @@ POST /api/ingestion
 ```
 
 No request body is required. The endpoint awaits `PerformIngestAsync` and returns `200 OK` when ingestion completes. Cancellation is passed through the request pipeline.
+
+There is no retrieval or chat route yet. Although `VectorRepository` has a similarity-query method, the retrieval controller and service are placeholders and are not registered in `Program.cs`.
 
 In Development, the app maps the OpenAPI specification at `/openapi/v1.json` and enables Swagger UI. Check the URL printed by `dotnet run` for the local host and port.
 
@@ -210,6 +264,8 @@ For local HTTPS development, trust the .NET development certificate if your clie
 - **`DocumentInfo`** is the SQLite document record: ID, file name, relative path, hash, file size, timestamps, ingestion version, and status.
 - **`DocumentChunk`** is the unit indexed in Qdrant: chunk ID, document ID, file name, chunk index, text content, estimated token count, embedding, and ingestion version.
 - Qdrant payloads include the document ID, file name, chunk index, content, token count, and ingestion version, enabling results to be associated with their source document.
+
+`DocumentStatus` tracks ingestion progress: `NotProcessed` → `Extracted` → `Cleaned` → `Chunked` → `Stored`. If processing a document fails, the service records `Failed` before rethrowing the error. A successfully stored document also gets a refreshed `LastIngestedAtUtc` timestamp.
 
 ## Project layout
 
