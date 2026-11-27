@@ -54,7 +54,7 @@ namespace HRRagSystem.Services.Implementation
                     FileHash = fileHash,
                     FileSize = fileInfo.Length,
                     LastModifiedUtc = fileInfo.LastWriteTimeUtc,
-                    Status = DocumentStatus.Pending
+                    Status = DocumentStatus.NotProcessed
                 };
 
                 documentInfos.Add(document);

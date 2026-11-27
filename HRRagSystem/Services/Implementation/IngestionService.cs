@@ -1,4 +1,5 @@
-﻿using HRRagSystem.Services.Interfaces;
+﻿using HRRagSystem.Models;
+using HRRagSystem.Services.Interfaces;
 
 
 namespace HRRagSystem.Services.Implementation
@@ -25,6 +26,55 @@ namespace HRRagSystem.Services.Implementation
             _chunker = chunker;
             _dataFolderPath =  configuration["DataFolderPath"] ?? throw new InvalidOperationException("DataFolderPath is not configured.");
         }
+        private async Task ProcessDocumentAsync(DocumentInfo document, CancellationToken cancellationToken, bool isUpdateDocument)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                //Get Document Path
+                var documentPath = Path.Combine(_dataFolderPath, document.RelativePath);
+                // Add Document to document repository 
+                await _documentRepository.UpsertAsync(document);
+                // Extract Text and update Document Status
+                var extractedText = await _pdfReader.ExtractTextAsync(documentPath, cancellationToken);
+                document.Status = DocumentStatus.Extracted;
+                await _documentRepository.UpsertAsync(document);
+                //Clean and Update Document Status
+                var cleanedText = await _textCleaner.CleanTextAsync(extractedText, cancellationToken);
+                document.Status = DocumentStatus.Cleaned;
+                await _documentRepository.UpsertAsync(document);
+                //Chunking and Update document status
+                var chunks = await _chunker.ChunkDocumentAsync(cleanedText, document, cancellationToken);
+                if (chunks.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"No chunks generated for {document.RelativePath}");
+                }
+                document.Status = DocumentStatus.Chunked;
+                await _documentRepository.UpsertAsync(document);
+
+                // if isUpdate Document is true then it means we are passing a list of updated document, so delete is old chunks from qdrant for better results
+                if (isUpdateDocument)
+                {
+                    await _vectorRepository.DeleteDocumentAsync(document.DocumentId, cancellationToken);
+                }
+                // Insert the new Chunks into qdrant
+                await _vectorRepository.UpsertChunksAsync(chunks, cancellationToken);
+
+                //Updating Document status
+                document.Status = DocumentStatus.Stored;
+                document.LastIngestedAtUtc = DateTime.UtcNow;
+                await _documentRepository.UpsertAsync(document, cancellationToken);
+            }
+            catch
+            {
+                document.Status = DocumentStatus.Failed;
+                await _documentRepository.UpsertAsync(document,cancellationToken);
+
+                throw;
+            }
+        }
         public async Task PerformIngestAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -44,27 +94,16 @@ namespace HRRagSystem.Services.Implementation
             }
             foreach (var newDocument in newDocuments)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var documentPath = Path.Combine(_dataFolderPath, newDocument.RelativePath);
-                var extractedText = await _pdfReader.ExtractTextAsync(documentPath,cancellationToken);
-                var cleanedText = await _textCleaner.CleanTextAsync(extractedText,cancellationToken);
-                var chunks = await _chunker.ChunkDocumentAsync(cleanedText, newDocument,cancellationToken);
-                await _vectorRepository.UpsertChunksAsync(chunks,cancellationToken);
-                await _documentRepository.UpsertAsync(newDocument,cancellationToken);
+                await ProcessDocumentAsync(newDocument, cancellationToken, false);
             }
             foreach (var updatedDocument in updatedDocuments)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var documentPath = Path.Combine(_dataFolderPath, updatedDocument.RelativePath);
-                var extractedText = await _pdfReader.ExtractTextAsync(documentPath,cancellationToken);
-                var cleanedText = await _textCleaner.CleanTextAsync(extractedText,cancellationToken);
-                var chunks = await _chunker.ChunkDocumentAsync(cleanedText, updatedDocument,cancellationToken);
-
-                await _vectorRepository.DeleteDocumentAsync(updatedDocument.DocumentId,cancellationToken);
-                await _vectorRepository.UpsertChunksAsync(chunks,cancellationToken);
-                await _documentRepository.UpsertAsync(updatedDocument,cancellationToken);
+                await ProcessDocumentAsync(updatedDocument, cancellationToken, true);
             }
-        }       
+        }    
+        
+        
                     
     }
+
 }

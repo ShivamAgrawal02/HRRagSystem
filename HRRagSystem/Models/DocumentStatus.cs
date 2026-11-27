@@ -2,10 +2,12 @@
 {
     public enum DocumentStatus
     {
-    Pending,
-    Processing,
-    Completed,
+    NotProcessed,
+    Extracted,
+    Cleaned,
+    Chunked,
+    Stored,
     Failed
-
+    
     }
 }
